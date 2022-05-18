@@ -1,0 +1,232 @@
+---
+title: "Us Police Shooting"
+author: "Jamelehija-Adedokhan-Aseel Khamis"
+date: "6/5/2021"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+In this markdown,We Are going to analyze this data set:https://www.kaggle.com/ahsen1330/us-police-shootings of United states police shooting.
+
+##Goals
+In our research, we will focus on three main questions:
+
+   1) Is the age normally distributed?
+   
+   2) Is there a correlation between being armed, the race of the neutralized person and age?  
+   
+   3) Is the age and race correlated with attacking?
+   
+Our main goal in this research is to check if the adults are the most armed or attacking people from different races. based on this, we will use the age almost in every model or visualization.
+```{r libraries, message=FALSE,warning=FALSE, echo=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(broom)
+library(knitr)
+library(janitor)
+library(dplyr)
+library(ggcorrplot)
+library(scales)
+library(RColorBrewer)
+library(stringi)
+library(cowplot)
+```
+## importing the data set
+The dataset is  an csv file, so we used read.csv to read it 
+```{r read shooting dataset,message=FALSE, warning=FALSE, echo=FALSE}
+shooting_data<-read.csv("C:\\Users\\MuhamadDo\\Desktop\\Rproject\\shootings.csv")
+shooting_data<-shooting_data%>%
+  na.omit()
+
+
+  
+```
+## Transformation,Visualization,and Modelling the data
+1) Transformations:
+
+--First of all, we took specific columns which are important for our research.
+
+--The first mutation is for all different age groups in our data set, starting from children finishing in Elders.
+
+--The second mutation is to check whether the person had any kind of mental illness and at the same time if he attacked the police during the incident. 
+
+--The third and fourth mutations is to check whether the shooted person was armed/attacking.
+
+--The fifth mutation, and the last, is to Minimize the races into two main races (Black and White), obviously in US they are whether black or white even though they are Hispanic/Asian…
+
+```{r pressure, echo=FALSE}
+shooting_data<-shooting_data[,c(6:8,10:15)]
+
+shooting_data<-shooting_data%>%
+  filter(!is.na(age)) %>%
+  mutate(age_group = ifelse(age <= 13, "children", 
+                                    ifelse(age > 13 & age <=20, "teens",
+                                           ifelse(age > 20 & age <= 30, "youth",
+                                                  ifelse(age > 30 & age <= 50, "adults","Elders")))))
+shooting_data<-shooting_data%>%
+  filter(!is.na(signs_of_mental_illness),!is.na(threat_level))%>%
+  mutate(mental_attack=ifelse(signs_of_mental_illness=="True" &threat_level=="attack",TRUE,FALSE))
+shooting_data<-shooting_data%>%
+  filter(!is.na(arms_category))%>%
+  mutate(isarmed=ifelse(arms_category=="Guns",TRUE,FALSE))
+shooting_data<-shooting_data%>%
+  mutate(isattacking=ifelse(threat_level=="attack",TRUE,FALSE))
+shooting_data<-shooting_data%>%
+  mutate(race=ifelse(race=="Black","black","white"))
+```
+
+2) Visualization:
+
+Lets take a look of all age groups and the states that we are going to visualize!
+
+```{r ages,states}
+
+shooting_data%>%
+  group_by(age_group)%>%
+  summarize()
+shooting_data%>%
+  group_by(state)%>%
+  summarize()
+
+```
+
+Now we are going to show a boxplot of the number of people who were killed from all ages and states.
+
+```{r age killed for each state}
+
+ggplot(shooting_data,aes(x=state,y=age,fill(state)))+
+  geom_boxplot(fill="orange")
+
+```
+
+We can clearly see that the average age across all states is in the 29-45 range, the adults group. To confirm this, we can look at the age group at which the most people were killed, relative to other groups:
+
+```{r view adults}
+agekilled<-shooting_data%>%
+  count(age_group)%>%
+  view()
+agekilled
+```
+The answer is adults, as we expected.
+
+As known, the US is very large country and it's very important to show the death reports across the states,
+so now lets take a look at the map all around the US in order to see in which places shootings are most common.
+```{r map for all the states}
+k <-shooting_data %>% 
+    group_by(state) %>%
+    arrange(state) %>% 
+    tally()
+k<-k[-c(8),]
+states <- data.frame(state_abb = state.abb, state_names=state.name)
+new_data <- cbind(k, states)
+l <- new_data %>% select(state_names, n)
+l$state_names <- tolower(l$state_names)
+centroid <- data.frame(region=tolower(state.name), long=state.center$x, lat=state.center$y)
+l <- cbind(l, centroid) %>% select(-region)
+map <- map_data("state")
+l %>% ggplot(aes(fill=n)) +
+    geom_map(aes(map_id=state_names), map=map) +
+    expand_limits(x = map$long, y = map$lat) +
+    scale_fill_gradient(low="green", high="red", name="Deaths Reported") +
+    geom_text(x=l$long, y=l$lat, label=l$state_names)
+```
+
+very interesting map, California in first place, second is Texas and so on. 
+
+
+3) Modeling:
+
+At first, lets start with the first hypothesis: age is normally distributed:
+
+```{r age denisty/normal distribution}
+ggplot(data=shooting_data, aes(x=age),main="Density plot of the age")+
+  geom_density(fill="lightskyblue")
+shapiro.test(shooting_data$age)
+
+```
+
+We can see here a distribution big one hump in the middle and acting like normal distribution, the possible explanation for that is: most of the people were shot are between ages 25-50, which proves more our main research goal, but lets take a look of the results we get from shapiro test for normal distribution:
+
+The p-value is lower than 0.05, so we can say in significance level of 0.05 that the age is not normally distributed, so we reject the null hypothesis. 
+
+
+Now, lets move on to our second question: Is there a correlation between race, armed of the neutralized person and age?
+
+First of all, we start with showing a boxplot of people armed by age:
+
+```{r visualising the variables}
+ggplot(shooting_data,aes(x = isarmed, y = age,fill =isarmed))+
+  geom_boxplot()+
+  scale_fill_brewer(palette = "Pastel2") 
+
+```
+
+As we can see, the median age of every boxplot is almost 30, which means that there is a strong connection between age and armed people. in other words, the most armed people are the  young adults.
+
+Lets check this by the results to decide whether there is a correlation or not. also, we are adding the variable race, according to the goal we have set.
+
+First We Use the cor() function to test the relationship between our independent variables (attacking and armed) and to make sure they aren’t too highly correlated.
+
+```{r regression for age and attacking-having gun-race}
+cor(shooting_data$isarmed,shooting_data$isattacking)
+fitade<-lm(formula= log10(age)~ isarmed + isattacking + race,data = shooting_data)%>%
+  summary()
+fitade
+```
+Here we can see our p-value is lower than 0.05 so we cant reject the null hypothesis and we can say in significance level of 0.05 that there is correlation!
+
+As we expected, owning a gun or attacking police of any race correlates with age. The interpretation of this is that if a person is armed & from a a certain race, he is more likely to be an adult.
+
+Along with that if we take the fourth row we can clearly see that the white race people get shot -the bigger age they are(in the adults group range).
+
+
+Now lets move to check our final question: is there a correlation between the age and attacking?
+
+```{r age-attacking}
+fitgen<-lm(formula = log1p(isattacking)~age+race, data= shooting_data)%>%
+  summary()
+fitgen
+fit2<-lm(formula = log1p(isattacking) ~ age, data = shooting_data)
+summary(fit2)
+shooting_data %>% 
+  ggplot(aes(y=age, x= isattacking,fill=race))+
+  geom_violin(color="lightblue")+
+  stat_smooth(method = "lm",color="yellow")
+```
+
+our p-value here is 0.0001 which lower than 0.05 so we cant reject the null hypothesis,in other words there is correlation between the age,race and attacking the police,as we saw before the race already have correlation(white adults) and here we confirm the correlation between the age and attacking police.
+
+
+#Conclusion
+
+We checked three questions:
+
+   1) Is the age normally distributed.
+   
+   2) Is there a correlation between race, attacking, armed of the neutralized person and age. 
+   
+   3) Is the gender correlated with attacking.
+   
+*The first question, visualization showed a behavior that is very close to normal distribution but the results rejected they hypothesis
+
+**The second question, showed a strong correlation between the three variables, we learned that the most armed/attacking people in USA are the people from the adults group. also that white people have linear connection with the age as we explained before.
+
+***The third question, as we expected, there is no correlation between the two variables, which makes sense, because the younger ages (children, teens) and the elders cannot really attack the police, and adults tend more to fight and attack them.
+
+So to sum up, we clearly can see that's the adults group are the ones with the highest numbers of attacking, shooting and being armed. which confirms our main research goal, checking if the adults are the most active age group in police shooting situations. 
+
+We had a hard time as a team searching at this data-set, because almost every variable is noncontinuous and every variable shows very different information from the other which makes it hard for us to find a correlation between them and finding a relationships. We think that's the maximum information we can get from a small data-set with such irrelevant variables.
+
+
+Thank you for reading and we hope that you enjoyed!
+
